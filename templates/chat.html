@@ -4,8 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Chat Interface</title>
-    <style>
-        * {
+    <style>* {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
@@ -244,6 +243,21 @@
                 display: none;
             }
         }
+        /* Add a loading spinner */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #19c37d;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -344,93 +358,93 @@
         window.onload = loadQuestions;
 
         async function sendMessage() {
-            const userInput = document.getElementById("user-input");
-            const chatMessages = document.getElementById("chat-messages");
-            const recentQuestionsDiv = document.getElementById("question-history");
+    const userInput = document.getElementById("user-input");
+    const chatMessages = document.getElementById("chat-messages");
+    const recentQuestionsDiv = document.getElementById("question-history");
 
-            let question = userInput.value.trim();
-            if (question === "") return;
+    let question = userInput.value.trim();
+    if (question === "") return;
 
-            // Add user message to chat
-            const userMessageDiv = document.createElement("div");
-            userMessageDiv.classList.add("message", "user");
-            userMessageDiv.innerHTML = `
-                <div class="profile-pic"></div>
-                <div class="message-content">${question}</div>
-            `;
-            chatMessages.appendChild(userMessageDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+    // Add user message to chat
+    const userMessageDiv = document.createElement("div");
+    userMessageDiv.classList.add("message", "user");
+    userMessageDiv.innerHTML = `
+        <div class="profile-pic"></div>
+        <div class="message-content">${question}</div>
+    `;
+    chatMessages.appendChild(userMessageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
 
-            // Clear input field
-            userInput.value = "";
+    // Clear input field
+    userInput.value = "";
 
-            try {
-                // Create bot message container for typing indicator
-                const botMessageDiv = document.createElement("div");
-                botMessageDiv.classList.add("message", "bot");
+    try {
+        // Create bot message container for typing indicator
+        const botMessageDiv = document.createElement("div");
+        botMessageDiv.classList.add("message", "bot");
 
-                // Add bot logo
-                const botAvatar = document.createElement("img");
-                botAvatar.src = "static/images/msg_logo.jpg"; // Ensure this path is correct
-                botAvatar.alt = "Bot Logo";
-                botAvatar.classList.add("profile-pic");
+        // Add bot logo
+        const botAvatar = document.createElement("img");
+        botAvatar.src = "static/images/msg_logo.jpg"; // Ensure this path is correct
+        botAvatar.alt = "Bot Logo";
+        botAvatar.classList.add("profile-pic");
 
-                // Create typing indicator
-                const typingIndicator = document.createElement("div");
-                typingIndicator.classList.add("message-content", "typing-indicator");
-                typingIndicator.textContent = "Kira is typing...";
+        // Create loading spinner
+        const loadingSpinner = document.createElement("div");
+        loadingSpinner.classList.add("loader");
 
-                // Append elements
-                botMessageDiv.appendChild(botAvatar);
-                botMessageDiv.appendChild(typingIndicator);
-                chatMessages.appendChild(botMessageDiv);
-                chatMessages.scrollTop = chatMessages.scrollHeight;
+        // Append elements
+        botMessageDiv.appendChild(botAvatar);
+        botMessageDiv.appendChild(loadingSpinner);
+        chatMessages.appendChild(botMessageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
 
-                // Send request to Flask backend
-                const response = await fetch("/ask", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ question: question }),
-                });
+        // Send request to Flask backend
+        const response = await fetch("/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: question }),
+        });
 
-                const data = await response.json();
-                let answer = data.answer || "Sorry, I couldn't find an answer.";
+        const data = await response.json();
+        console.log("Response from server:", data); // Log the response
 
-                // Remove typing indicator
-                botMessageDiv.removeChild(typingIndicator);
+        let answer = data.answer || "Sorry, I couldn’t understand that.";
 
-                // Create message content div
-                const messageContent = document.createElement("div");
-                messageContent.classList.add("message-content");
-                botMessageDiv.appendChild(messageContent);
+        // Remove loading spinner
+        botMessageDiv.removeChild(loadingSpinner);
 
-                // Simulate typing effect
-                let index = 0;
-                const typingInterval = setInterval(() => {
-                    if (index < answer.length) {
-                        messageContent.textContent += answer.charAt(index);
-                        index++;
-                        chatMessages.scrollTop = chatMessages.scrollHeight; // Auto-scroll
-                    } else {
-                        clearInterval(typingInterval);
-                    }
-                }, 50); // Adjust typing speed
+        // Create message content div
+        const messageContent = document.createElement("div");
+        messageContent.classList.add("message-content");
+        botMessageDiv.appendChild(messageContent);
 
-                // Update UI with recent question
-                const newQuestionItem = document.createElement("li");
-                newQuestionItem.classList.add("history-item");
-                newQuestionItem.textContent = question;
-                newQuestionItem.addEventListener("click", () => sendQuestionAgain(question));
-                recentQuestionsDiv.prepend(newQuestionItem); // Add new question at the top
-
-                // Fetch updated questions from the database
-                await loadQuestions();
-
-            } catch (error) {
-                console.error("Error:", error);
+        // Simulate typing effect
+        let index = 0;
+        const typingInterval = setInterval(() => {
+            if (index < answer.length) {
+                messageContent.textContent += answer.charAt(index);
+                index++;
+                chatMessages.scrollTop = chatMessages.scrollHeight; // Auto-scroll
+            } else {
+                clearInterval(typingInterval);
             }
-        }
+        }, 30); // Adjust typing speed
 
+        // Update UI with recent question
+        const newQuestionItem = document.createElement("li");
+        newQuestionItem.classList.add("history-item");
+        newQuestionItem.textContent = question;
+        newQuestionItem.addEventListener("click", () => sendQuestionAgain(question));
+        recentQuestionsDiv.prepend(newQuestionItem); // Add new question at the top
+
+        // Fetch updated questions from the database
+        await loadQuestions();
+
+    } catch (error) {
+        console.error("Error:", error); // Log any errors
+    }
+}
         function sendQuestionAgain(question) {
             document.getElementById("user-input").value = question; // Prefill input box
             sendMessage(); // Resend the question

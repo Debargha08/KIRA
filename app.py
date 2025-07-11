@@ -10,29 +10,30 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import warnings
 import requests  
+import json
 warnings.filterwarnings("ignore")
-
-load_dotenv()
-# Add to your Flask app.py (backend)
 from flask_wtf.csrf import CSRFProtect
 import re
-
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+import time
 
-# Initialize Flask app
+
+load_dotenv()
+
+
 app = Flask(__name__)
 CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
 app.secret_key = os.getenv("SECRET_KEY", os.urandom(24))
 
-# MongoDB configuration
+
 app.config["MONGO_URI"] = os.getenv("MONGO_URI", "mongodb://localhost:27017/kira")
 mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
 mongo.db.users.create_index("email", unique=True)
 mongo.db.questions.create_index("username")
 
-# Configure Flask-Mail
+
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
@@ -40,42 +41,52 @@ app.config["MAIL_USERNAME"] = os.getenv("EMAIL_USERNAME")
 app.config["MAIL_PASSWORD"] = os.getenv("EMAIL_PASSWORD")
 app.config['ADMIN_EMAIL'] = os.getenv('ADMIN_EMAIL')
 mail = Mail(app)
-
-# Initialize CSRF protection
 csrf = CSRFProtect(app)
 
 limiter = Limiter(
     app=app,
-    key_func=get_remote_address,  # Rate limit by IP address
-    default_limits=["5 per minute"]  # Default rate limit
+    key_func=get_remote_address,  
+    default_limits=["5 per minute"]  
 )
 
-# Set up logging
+
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Ollama API configuration
-OLLAMA_API_URL = "http://localhost:11434/api/generate"  # Ollama API endpoint
 
-# Serve static files
+#gemini pro url
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent"
+API_KEY = "AIzaSyAYo5kaKGNQ2jL_dPbOBYFM9zbX6c3zpzo"  
+
+#training data
+def load_training_data():
+    try:
+        with open("training_data.json", "r") as file:
+            return json.load(file)
+    except Exception as e:
+        logger.error(f"Error loading training data: {e}")
+        return []
+
+training_data = load_training_data()
+
 @app.route("/static/<path:filename>")
 @csrf.exempt
 def static_files(filename):
     return send_from_directory("static", filename)
 
-# Serve index.html (Login Page)
+#login page
 @app.route("/")
 @csrf.exempt
 def index():
     return render_template("loginpage.html")
 
-# Serve registration page
+#registration page
 @app.route("/register-page")
 @csrf.exempt
 def register_page():
     return render_template("registrationpage.html")
 
-# User Registration Endpoint
+#Registration Endpoint
 @app.route("/register", methods=["POST"])
 @csrf.exempt
 def register():
@@ -148,7 +159,7 @@ def send_otp():
         logger.error(f"Error sending OTP: {e}")
         return jsonify({"success": False, "message": "An error occurred"}), 500
 
-# Verify OTP Endpoint
+
 @app.route("/verify-otp", methods=["POST"])
 @csrf.exempt
 def verify_otp():
@@ -192,11 +203,11 @@ def verify_otp():
         logger.error(f"Error verifying OTP: {e}")
         return jsonify({"success": False, "message": "An error occurred"}), 500
 
-# User Login Endpoint
+
 @app.route("/login", methods=["POST"])
 def login():
     try:
-        # CSRF token is automatically validated by Flask-WTF
+    
         data = request.json
         logger.debug(f"Received login data: {data}")
 
@@ -219,57 +230,63 @@ def login():
     except Exception as e:
         logger.error(f"Error during login: {e}")
         return jsonify({"success": False, "message": "An error occurred during login"}), 500
-
-# Ask Endpoint (Updated to use Ollama)
 @app.route("/ask", methods=["POST"])
 @csrf.exempt
 def ask():
     if "user" not in session:
         return jsonify({"success": False, "message": "User not logged in"}), 401
-    try:
-        data = request.json
-        question = data.get("question")
-        if not question:
-            return jsonify({"success": False, "message": "Question is required"}), 400
-
-        username = session["user"]
-
-        # Check if the question already exists for the user
-        user_query_doc = mongo.db.questions.find_one({"username": username})
-        if user_query_doc:
-            existing_questions = {q["qns"].lower() for q in user_query_doc.get("queries", [])}
-            if question.lower() not in existing_questions:
-                mongo.db.questions.update_one(
-                    {"username": username},
-                    {"$push": {"queries": {"qns": question, "timestamp": datetime.utcnow()}}}
-                )
-        else:
-            query_data = {
-                "username": username,
-                "queries": [{"qns": question, "timestamp": datetime.utcnow()}]
-            }
-            mongo.db.questions.insert_one(query_data)
-
-        # Send the question to Ollama
-        payload = {
-            "model": "gemma:2b",  # Replace with your model name
-            "prompt": question,
-            "stream": False  # Set to True if you want streaming responses
-        }
-        response = requests.post(OLLAMA_API_URL, json=payload)
-        response.raise_for_status()
-
-        # Extract the generated response
-        generated_text = response.json().get("response", "No response generated")
-        # Ensure proper formatting
-        formatted_text = generated_text.replace("*", "").replace("\n", " ") 
-
-        return jsonify({"success": True, "answer": formatted_text}), 200
-
-    except Exception as e:
-        logger.error(f"Error during question processing: {e}")
-        return jsonify({"success": False, "message": "An error occurred"}), 500
     
+    data = request.json
+    question = data.get("question")
+    if not question:
+        return jsonify({"success": False, "message": "Question is required"}), 400
+
+    username = session["user"]
+
+    # Save the question to the database
+    user_query_doc = mongo.db.questions.find_one({"username": username})
+    if user_query_doc:
+        existing_questions = [q["qns"].lower() for q in user_query_doc.get("queries", [])]
+        if question.lower() not in existing_questions:
+            mongo.db.questions.update_one(
+                {"username": username},
+                {"$push": {"queries": {"qns": question, "timestamp": datetime.utcnow()}}}
+            )
+    else:
+        query_data = {
+            "username": username,
+            "queries": [{"qns": question, "timestamp": datetime.utcnow()}]
+        }
+        mongo.db.questions.insert_one(query_data)
+
+    try:
+        response = requests.post(
+            "http://localhost:8080/ask",
+            json={"ask": False, "query": question},
+            timeout=10
+        )
+        response_data = response.json()
+        
+        if "error" in response_data:
+            return jsonify({"success": False, "message": response_data["error"]}), 500
+            
+        return jsonify({
+            "success": True,
+            "answer": response_data.get("text", "No answer provided")
+        }), 200
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Model service request failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": "Could not connect to the AI service"
+        }), 500
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": "An unexpected error occurred"
+        }), 500
 
 @app.route("/get-queries", methods=["GET"])
 @csrf.exempt
@@ -360,8 +377,6 @@ def about():
 def contact():
     return render_template("contact.html")
 
-
-
 @app.route('/submit-form', methods=['POST'])
 @limiter.limit("5 per minute")
 def submit_contact_form():
@@ -425,8 +440,6 @@ def send_email_notification(name, email, message):
         mail.send(msg)
     except Exception as e:
         logger.error(f"Error sending email notification: {e}")
-
-
 
 # Serve forgotpassword.html (Forgot Password Page)
 @app.route("/forgotpassword")
@@ -549,6 +562,7 @@ def get_profile():
 def logout():
     session.pop("user", None)
     return redirect(url_for("index"))
+
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)
